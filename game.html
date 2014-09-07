@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Street View events</title>
+    <style>
+      html, body, #map-canvas {
+        height: 100%;
+        margin: 0px;
+        padding: 0px
+      }
+    </style>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp"></script>
+    <script type="text/javascript" src="jquery.js"></script>
+    <script type="text/javascript" src="jquery-jsonp.js"></script>    
+    <script type="text/javascript" src="freesoundLib.js"></script>
+    <script type="text/javascript" src="settings.js"></script>
+    <script type="text/javascript" src="howler.js"></script>
+
+<script>
+
+var freesound;
+var tag;
+var lng;
+var lat;
+var cafe;
+var target;
+var ambient=new Array();
+
+var tready=0;
+var aready=0;
+
+Number.prototype.toRad = function() {
+  return this * Math.PI / 180;
+}
+
+Number.prototype.toDeg = function() {
+    // convert radians to degrees (signed)
+    return this * 180 / Math.PI;
+}
+
+Number.prototype.toBrng = function() {
+    // convert radians to degrees (as bearing: 0...360)
+    return (this.toDeg()+360) % 360;
+}
+    
+$(document).ready(function(){
+
+  apiKey = settings.apiKey; 
+  //console.debug("key: " + apiKey);
+
+  if(apiKey == "")
+  {
+    //console.log("<br>please enter an apiKey in settings_local.json");
+  }     
+  else 
+  {       
+    /*======= freesound object ========*/
+    //creating freesound object 
+    freesound = new Freesound(apiKey, true);
+    //console.log(
+    //  "<br>freesound object created with api key = " + freesound.getApiKey() +
+    //  "<br>freesound base uri = " + freesound.getBaseUri()
+    //);
+
+  }
+
+  mySearch = location.search.substr(1).split("&")
+  tag=mySearch[0];
+  lng=eval(mySearch[1]);
+  lat=eval(mySearch[2]);
+  cafe = new google.maps.LatLng(lat, lng);
+  searchfs(tag,0);
+  for (var i = 0; i < 3; i++) {
+    searchfs('city',1);
+  }
+  for (var i = 0; i < 5; i++) {
+    searchfs('soundscape',1);
+  }
+  searchfs('cars',1);
+  searchfs('voice',1);
+
+
+
+});
+
+
+function SoundEvent (lang,lati,surls) {
+    this.lng = lang;
+    this.lat = lati;
+    this.sound = new Howl({
+      urls: surls,
+      autoplay: true,
+      loop: true
+    });
+
+   this.panning = function(pan) {
+    this.sound.pos3d(pan,1,1);
+  }
+
+  this.volume = function(dist) {
+    //var d = 10/Math.min(50,dist);
+    var d=5/Math.pow(Math.log(dist),2);
+    //console.log(d);
+    this.sound.volume(d);
+  }
+}
+
+  function searchfs(query,type) {
+        var q = query;
+        var p = 1;
+        var f = "";
+        var s = "";
+        //console.log("<br>Searching: " + q);
+        freesound.getSoundsFromQuery(q,p,'duration:[5 TO 60]',s,type,displaySearchResults, errorSearch);
+      }
+
+      function displaySearchResults(soundCollection,type) {
+        //console.log("<br><br>Search Results<br>**************");
+        //console.log("<br>* number of results: " + soundCollection.properties['num_results']);
+        //console.log("<br>* number of pages: " + soundCollection.properties['num_pages']);
+        //console.log("<br>* sounds:");
+        //for (obj in soundCollection.properties['sounds']) {
+          //console.log("<br>--- " + obj + ": " + soundCollection.properties['sounds'][obj]['id'] + " - " + soundCollection.properties['sounds'][obj]['original_filename']);
+        //}
+        var r = Math.round(Math.min(29,soundCollection.properties['num_results'])*Math.random()); 
+        var l1=getLocation(lng,lat,50);
+        // var l2=codeLatLng(l1[1],l1[0]);
+        // console.log(l2);
+        var ln=l1[0];
+        var lt=l1[1];
+        var ev = new SoundEvent(ln,lt,[soundCollection.properties['sounds'][r]['preview-lq-mp3'],soundCollection.properties['sounds'][r]['preview-lq-ogg']]);
+        var d = getDist(lt, ln, lat, lng);
+        var b = getBearing(lt, ln, lat, lng);
+        ev.panning(b/360);
+        ev.volume(d);
+
+        if (type==0) {
+          target=ev;
+          tready=1;
+        }
+        else {
+          ambient.push(ev);
+          aready=1;
+        }
+        
+
+        // sc = soundCollection;
+        //console.log(soundCollection);
+        // //console.log('<br><br><button onclick="sc.previous(displaySearchResults);">previous</button><button onclick="sc.next(displaySearchResults);">next</button>')
+        
+      }
+
+      function errorSearch(status_code, type, explanation){
+        console.log("<br>Error: " + status_code + " (" + type + ")<br>" + explanation );
+      }
+
+
+function getLocation(x0, y0, radius) {
+    // Convert radius from meters to degrees
+    var radiusInDegrees = radius / 111000;
+
+    var u = Math.random();
+    var v = Math.random();
+    var w = radiusInDegrees * Math.sqrt(u);
+    var t = 2 * Math.PI * v;
+    var x = w * Math.cos(t);
+    var y = w * Math.sin(t);
+
+    // Adjust the x-coordinate for the shrinking of the east-west distances
+    var new_x = x / Math.cos(y0);
+
+    var foundLongitude = new_x + x0;
+    var foundLatitude = y + y0;
+    //console.log("Longitude: " + foundLongitude + "  Latitude: " + foundLatitude );
+    return [foundLongitude,foundLatitude];
+}
+
+function codeLatLng(lati,lang) {
+  var latlng = new google.maps.LatLng(lati, lang);
+  geocoder = new google.maps.Geocoder();
+  geocoder.geocode({'latLng': latlng}, function(results, status) {
+    if (status == google.maps.GeocoderStatus.OK) {
+      if (results[1]) {
+        var loc=results[1].geometry.location;
+        //console.log(loc);
+        return loc;
+      } else {
+        alert('No results found');
+      }
+    } else {
+      alert('Geocoder failed due to: ' + status);
+    }
+  });
+}
+
+function getDist(lat1, lon1, lat2, lon2) {
+    var R = 6371; // km
+    var dLat = (lat2 - lat1).toRad();
+    var dLon = (lon2 - lon1).toRad(); 
+    var a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1.toRad()) * Math.cos(lat2.toRad()) * 
+            Math.sin(dLon / 2) * Math.sin(dLon / 2); 
+    var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)); 
+    var d = R * c;
+    return d*1000;
+  }
+
+function getBearing(lat1, lon1, lat2, lon2) {
+  lat1 = lat1.toRad(); lat2 = lat2.toRad();
+    var dLon = (lon2-lon1).toRad();
+
+    var y = Math.sin(dLon) * Math.cos(lat2);
+    var x = Math.cos(lat1)*Math.sin(lat2) -
+            Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+    var bearing = Math.atan2(y, x).toBrng();
+    console.log(bearing);
+    return bearing;
+}
+
+
+function initialize() {
+
+  var panoramaOptions = {
+    position: cafe,
+    pov: {
+      heading: 270,
+      pitch: 0
+    },
+    visible: true
+  };
+  var panorama = new google.maps.StreetViewPanorama(document.getElementById('pano'), panoramaOptions);
+
+  google.maps.event.addListener(panorama, 'pano_changed', function() {
+      var panoCell = document.getElementById('pano_cell');
+      panoCell.innerHTML = panorama.getPano();
+  });
+
+  google.maps.event.addListener(panorama, 'links_changed', function() {
+      var linksTable = document.getElementById('links_table');
+      while (linksTable.hasChildNodes()) {
+        linksTable.removeChild(linksTable.lastChild);
+      }
+      var links = panorama.getLinks();
+      for (var i in links) {
+        var row = document.createElement('tr');
+        linksTable.appendChild(row);
+        var labelCell = document.createElement('td');
+        labelCell.innerHTML = '<b>Link: ' + i + '</b>';
+        var valueCell = document.createElement('td');
+        valueCell.innerHTML = links[i].description;
+        linksTable.appendChild(labelCell);
+        linksTable.appendChild(valueCell);
+      }
+  });
+
+  google.maps.event.addListener(panorama, 'position_changed', function() {
+      var positionCell = document.getElementById('position_cell');
+      var pos = panorama.getPosition(); 
+      positionCell.firstChild.nodeValue = pos + '';
+      
+      if (tready==1) {
+        var d = getDist(target.lat, target.lng, pos.k, pos.B);
+        //console.log(d);
+        var distancet = document.getElementById('dist');
+        distancet.firstChild.nodeValue = d + '';
+        target.volume(d);
+        var b = getBearing(target.lat, target.lng, pos.k, pos.B);
+        target.panning(b/360);
+      }
+      if (aready==1) {
+        for (var i = 0; i < ambient.length; i++) {
+          var d = getDist(ambient[i].lat, ambient[i].lng, pos.k, pos.B);
+          ambient[i].volume(d);
+          var b = getBearing(ambient[i].lat, ambient[i].lng, pos.k, pos.B);
+          ambient[i].panning(b/360);
+        }
+      }
+  });
+
+  google.maps.event.addListener(panorama, 'pov_changed', function() {
+      var headingCell = document.getElementById('heading_cell');
+      var pitchCell = document.getElementById('pitch_cell');
+      headingCell.firstChild.nodeValue = panorama.getPov().heading + '';
+      pitchCell.firstChild.nodeValue = panorama.getPov().pitch + '';
+  });
+}
+
+
+google.maps.event.addDomListener(window, 'load', initialize);
+
+
+
+    </script>
+  </head>
+  <body>
+    <div id="pano" style="width: 45%; height: 100%;float:left"></div>
+    <div id="panoInfo" style="width: 45%; height: 100%;float:left">
+    <table>
+      <tr>
+        <td><b>Position</b></td><td id="position_cell">&nbsp;</td>
+      </tr>
+      <tr>
+        <td><b>POV Heading</b></td><td id="heading_cell">270</td>
+      </tr>
+      <tr>
+        <td><b>POV Pitch</b></td><td id="pitch_cell">0.0</td>
+      </tr>
+      <tr>
+        <td><b>Pano ID</b></td><td id="pano_cell">&nbsp;</td>
+      </tr>
+      <tr>
+        <td><b>Distance to target</b></td><td id="dist">&nbsp;</td>
+      </tr>
+      <table id="links_table"></table>
+    </table>
+    </div>
+        <div id="resp" style='font-size: 12px; font-family: "Andale Mono";'></div>
+<div id="respSearch" width="400" style='font-size: 12px; font-family: "Andale Mono";'></div>
+    <div id="form" style="visibility:hidden">
+        <FORM NAME="myForm">
+          <INPUT TYPE="TEXT" NAME="tag" ID="tag" >
+          <INPUT TYPE="hidden" NAME="lng" ID="lng">
+          <INPUT TYPE="hidden" NAME="lat" ID="lat">
+        </FORM>
+      </div>
+  </body>
+</html>
